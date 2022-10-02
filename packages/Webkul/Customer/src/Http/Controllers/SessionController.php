@@ -47,40 +47,36 @@ class SessionController extends Controller
      */
     public function create(CustomerLoginRequest $request)
     {
-        $request->validated();
+      $request->validated();
 
-        if (! auth()->guard('customer')->attempt($request->only(['email', 'password']))) {
-            session()->flash('error', trans('shop::app.customer.login-form.invalid-creds'));
+      if (! auth()->guard('customer')->attempt($request->only(['email', 'password']))) {
+        return response()->json(['status'=>'failed','message'=>'Credentials Error','redirect' => route('customer.session.index')],200);
+      }
 
-            return redirect()->back();
-        }
+      if (auth()->guard('customer')->user()->status == 0) {
+        auth()->guard('customer')->logout();
 
-        if (auth()->guard('customer')->user()->status == 0) {
-            auth()->guard('customer')->logout();
+        return response()->json(['status'=>'failed','message'=>'User is not active','redirect' => route('customer.session.index')],200);
+      }
 
-            session()->flash('warning', trans('shop::app.customer.login-form.not-activated'));
+      if (auth()->guard('customer')->user()->is_verified == 0) {
 
-            return redirect()->back();
-        }
 
-        if (auth()->guard('customer')->user()->is_verified == 0) {
-            session()->flash('info', trans('shop::app.customer.login-form.verify-first'));
+        Cookie::queue(Cookie::make('enable-resend', 'true', 1));
 
-            Cookie::queue(Cookie::make('enable-resend', 'true', 1));
+        Cookie::queue(Cookie::make('email-for-resend', $request->get('email'), 1));
 
-            Cookie::queue(Cookie::make('email-for-resend', $request->get('email'), 1));
+        auth()->guard('customer')->logout();
 
-            auth()->guard('customer')->logout();
+        return response()->json(['status'=>'failed','message'=>'User is not verified','redirect' => route('customer.session.index')],200);
+      }
 
-            return redirect()->back();
-        }
+      /**
+       * Event passed to prepare cart after login.
+       */
+      Event::dispatch('customer.after.login', $request->get('email'));
 
-        /**
-         * Event passed to prepare cart after login.
-         */
-        Event::dispatch('customer.after.login', $request->get('email'));
-
-        return redirect()->intended(route($this->_config['redirect']));
+      return response()->json(['status'=>'success','message'=>'You have logged in successfully','redirect' => route('shop.home.index')],200);
     }
 
     /**
